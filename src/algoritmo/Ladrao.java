@@ -1,9 +1,16 @@
 package algoritmo;
-
+import java.awt.Point;
 import java.util.ArrayList;
 import java.util.List;
 public class Ladrao extends ProgramaLadrao {
 	public static int[] exp = new int[] {0,0,0,0};
+	private int[][] mapMov = new int[30][30];
+	private int[][] mapObject = new int[30][30];
+	private Point position = new Point();
+	
+	private boolean jackPot = false;
+	private int jackPotCount = 0;
+	private int currentCoins = 0;
 	
 	private ArrayList<Integer> upList = new ArrayList<Integer>(
             List.of(0,1,2,3,4,5,6,7,8,9));
@@ -19,6 +26,16 @@ public class Ladrao extends ProgramaLadrao {
             List.of(6,7,8,11,12,15,16,17));
 	
 	
+	private ArrayList<Integer> smellUpList = new ArrayList<Integer>(
+            List.of(0, 1, 2));
+	private ArrayList<Integer> smellDownList = new ArrayList<Integer>(
+            List.of(5, 6, 7));
+	private ArrayList<Integer> smellRightList = new ArrayList<Integer>(
+            List.of(2, 4, 7));
+	private ArrayList<Integer> smellLeftList = new ArrayList<Integer>(
+            List.of(0, 3, 5));
+	
+	
 	// Cada ladrão pode ter varios mapas e grafos na cabeça dele. Isso pode ajudar a ele tomar uma decisão aleatória 
 	//inteligente.
 	
@@ -32,16 +49,6 @@ public class Ladrao extends ProgramaLadrao {
 	//2. Ir para moedas;
 	//3. Afastar do poupador roubado;
 	
-	
-	
-	
-//	int[] up = new int[]{0,1,2,3,4,5,6,7,8,9};
-//	int[] down = new int[]{14,15,16,17,18,19,20,21,22,23};
-//	int[] right = new int[]{3,4,8,9,12,13,17,18,22,23};
-//	int[] left = new int[]{0,1,5,6,10,11,14,15,19,20};
-//	int[] outcircle = new int[]{0,1,2,3,4,5,9,10,13,14,18,19,20,21,22,23};
-//	int[] innercircle = new int[] {6,7,8,11,12,15,16,17};
-//	
 	/*	
 	 * 
 	 *  -2 			Sem visão do local
@@ -55,68 +62,233 @@ public class Ladrao extends ProgramaLadrao {
 	 *   200~299 	Ladão
 	 * 
 	 * */
-	
-	public int stealProtocol() {
-		// formar o algoritimo para randomizar o movimento;
-		// movValue index:
-//		0 == up
-//		1 == down
-//		2 == right
-//		3 == left
+	public int SearchPoupadorByVision() {
+		// Retorna a direção mais favorável.
+		int[] vision = sensor.getVisaoIdentificacao();
+		int bestDirectionValue = 0;
+		int bestDirection = 0;
+		int[] directionValues = {0,0,0,0,0};
+		//		0 == Random direction
+		//		1 == up
+		//		2 == down
+		//		3 == right
+		//		4 == left
 		
-		int[] movValue = new int[]{0,0,0,0};
 		
+		/* for para buscar o poupador e avaliar a jogada se vale a pena.*/
 		
-		int[] vision = this.sensor.getVisaoIdentificacao();
-		for (int x=0; x < vision.length; x++) {
-			if(vision[x]>=100 && vision[x]<200) {
-				if(upList.contains(x)) {
-					movValue[0]+=5;
-					if(innercircle.contains(x)) {
-						movValue[0]+=15;
-						}
-				}
-				if(downList.contains(x)) {
-					movValue[1]+=5;
-					if(innercircle.contains(x)) {
-						movValue[1]+=15;
-						}
-				}
-				if(rightList.contains(x)) {
-					movValue[2]+=5;
-					if(innercircle.contains(x)) {
-						movValue[2]+=15;
-						}
-				}
-				if(downList.contains(x)) {
-					movValue[3]+=5;
-					if(innercircle.contains(x)) {
-						movValue[3]+=15;
-						}
-				}
+		for(int i = 0;i<vision.length;i++) {
+			if(upList.contains(i)) {
+				directionValues[1] = evaluateMove(vision[i], i);
+			}else if(downList.contains(i)){
+				directionValues[2] = evaluateMove(vision[i], i);
+			}else if(rightList.contains(i)){
+				directionValues[3] = evaluateMove(vision[i], i);
+			}else if(leftList.contains(i)){
+				directionValues[4] = evaluateMove(vision[i], i);
 			}
-				return stealProtocol();
+		}
+		//depois de checar os valores de ganho em cada direção, vamos separar a melhor
+		// ainda falta fazer ele distinguir entre valores de igual peso.
+		for(int i = 0; i < directionValues.length;i++) {
+			if(directionValues[i]> bestDirectionValue) {
+				bestDirectionValue = directionValues[i];
+				bestDirection = i;
 			}
-		
-		// checar se o ladrão que eu vi esta indo para essa direção.
-		return (int) (Math.random() * 5);
+		}
+		return bestDirection;
 	}
-	
-	public int searchProtocol() {
-		int[] vision = this.sensor.getVisaoIdentificacao();
-		for (int x=0;x < vision.length; x++) {
-			if(vision[x]>=100 && vision[x]<200) {
-				return stealProtocol();
-			}else {
-				return (int) (Math.random() * 5);
+	public int evaluateMove(int object, int position) {
+		/*Avalia o movimento com a ideia de que um poupador pode esta na região*/
+		
+		int value = 0;
+		if(object>= 100 && object<200) {
+			
+			value += 1;
+			if(innercircle.contains(position)) {
+				value += 1;
+			}
+		}
+		return value;
+		
+		
+		
+	}
+	public int SearchPoupadorBySmell() {
+		
+		/*
+		 * Tem de ser feito diferente da visão.
+		 * Tendo em vista que a leitura dos valores do olfato significa que tal agente passou por la a "x" turnos:
+		 * conseguimos deduzir que o poupador vai esta mais perto do valor mais baixo.
+		 * Todavia, vale lembrar que o valor 0 significa sem cheiro.
+		 * 
+		 * Então tem de ser o valor mais baixo e diferente de 0;
+		 *
+		 * */
+		
+		int[] poupadorSmell = sensor.getAmbienteOlfatoPoupador();
+		int bestDirectionValue = 0;
+		int bestDirection = 0;
+		int[] values = new int[5];
+		//		0 == Random direction
+		//		1 == up
+		//		2 == down
+		//		3 == right
+		//		4 == left
+		
+		for(int i = 0; i< poupadorSmell.length;i++) {
+			if(poupadorSmell[i]>=1) {
+				if(smellUpList.contains(i)) {
+					values[1] = compareSmellValues(values[1],poupadorSmell[i]);
+				}else if(smellDownList.contains(i)) {
+					values[2] = compareSmellValues(values[2],poupadorSmell[i]);
+				}else if(smellRightList.contains(i)) {
+					values[3] = compareSmellValues(values[3],poupadorSmell[i]);
+				}else if(smellLeftList.contains(i)) {
+					values[4] = compareSmellValues(values[4],poupadorSmell[i]);
+				}
 			}
 		}
 		
-		return 0; 
+		for(int i = 0; i < values.length; i++) {
+			if(values[i] != 0 && (values[i] < bestDirectionValue || bestDirectionValue == 0)) {
+				bestDirectionValue = values[i];
+				bestDirection = i;
+			}
+		}
+		return bestDirection;
+		
+		
+	}
+	
+	public int compareSmellValues(int lastValue, int newValue) {
+	if(newValue < lastValue && newValue != 0 || lastValue == 0) {
+		return newValue;
+	}
+	return lastValue;
+		
+	}
+	public int searchProtocol() {
+		int[] vision = sensor.getVisaoIdentificacao();
+		int bestDirectionValue = 0;
+		int bestDirection = 0;
+		int[] directionValues = {0,0,0,0,0};
+		//		0 == stay
+		//		1 == up
+		//		2 == down
+		//		3 == right
+		//		4 == left
+		
+		directionValues[1] = evaluateSearchMovement(vision, 1);
+		directionValues[2] = evaluateSearchMovement(vision, 2);
+		directionValues[3] = evaluateSearchMovement(vision, 3);
+		directionValues[4] = evaluateSearchMovement(vision, 4);
+				
+		for(int i = 0; i < directionValues.length;i++) {
+			if(directionValues[i]> bestDirectionValue) {
+				bestDirectionValue = directionValues[i];
+				bestDirection = i;
+			}
+		}
+		return bestDirection;
+		
+	}
+	public int evaluateSearchMovement(int[]  vision, int directionValue){
+		
+		// para avaliar, eu preciso do ponto no mapa. Tendo em vista que pode ficar muito grande a quantidade de "if's" e
+		// tendo em vista que eu so posso mover 1 casa, apesar da visão ser de duas casas em cada direção, eu so posso ir para
+		// cima(7), baixo(16), direita(12) e esquerda(11).
+		
+		// Se tiver mais tempo, eu penso em outra forma de mapear avaliando o resto da visão
+		
+		int value = 0;
+		Point mapCoordinatesOfMoviment= position;
+		int houseDataCode = 0; // O que é encontrado na casa em questão
+		
+		
+		if(directionValue == 1) {
+			houseDataCode = vision[7];
+			mapCoordinatesOfMoviment = new Point( position.x, position.y+1);
+		
+		}else if (directionValue == 2) {
+			houseDataCode = vision[16];	
+			mapCoordinatesOfMoviment = new Point( position.x, position.y-1);
+		
+		}else if (directionValue == 3) {
+			houseDataCode = vision[12];
+			mapCoordinatesOfMoviment = new Point( position.x+1, position.y);
+		
+		}else if (directionValue == 4) {
+			houseDataCode = vision[11];
+			mapCoordinatesOfMoviment = new Point( position.x-1, position.y);
+		}
+		
+		value -= mapMov[mapCoordinatesOfMoviment.x][mapCoordinatesOfMoviment.y];
+		
+		if(houseDataCode == 0) {
+			value+=2;
+		}else if(houseDataCode == -2 || houseDataCode == -1 || houseDataCode == 1 || houseDataCode == 3 || houseDataCode == 4 ||houseDataCode == 5) {
+			value-=2;
+		}
+		return value;
+		/*	
+		 * 
+		 *  -2 			Sem visão do local
+		 * 	-1 			Fora do ambiente do jogo
+		 *   0 			Vazio
+		 * 	 1 			Parede
+		 * 	 3 			Banco
+		 * 	 4 			Moeda
+		 * 	 5 			Partilha do poder
+		 *   100~199 	Poupador
+		 *   200~299 	Ladão
+		 * 
+		 * */
+	}
+
+	public void mappingMoves(Point position) {
+		mapMov[position.x][position.y]+=1;
+	}
+	public void VerifyJackPot() {
+		if(currentCoins == sensor.getNumeroDeMoedas()) {
+			currentCoins = sensor.getNumeroDeMoedas();
+			jackPot = true;
+		}
 	}
 	
 	public int acao() {
-		return (int) (Math.random() * 5);
+		
+		VerifyJackPot();
+		mappingMoves(position);
+		position = new Point(sensor.getPosicao().x, sensor.getPosicao().y);
+		
+		// backawayProtocol after stealing coins.
+		
+		if(jackPot) {
+			if(jackPotCount >= 3) {
+				jackPot = false;
+				jackPotCount = 0;
+			}else {
+				jackPotCount ++;
+				return searchProtocol();
+			}
+		}
+		
+		/*Buscar o Poupador pelos sensores do agente*/
+		int resolveByVision = SearchPoupadorByVision(); // Grava a direção que foi visto o poupador ou se não foi visto
+		int resolveBySmell = SearchPoupadorBySmell();   // Grava a direção que o cheiro do poupador foi sentido por ultimo ou se não
+		
+		
+		if(resolveByVision > 0) {
+			//achou poupador com a visão
+			return(resolveByVision);
+		}else if(resolveBySmell >0) {
+			// achou poupador com o olfato
+			return(resolveBySmell);
+		}else {
+			// Não achou poupador
+			return (searchProtocol());
+		}
 	}
 
 }
